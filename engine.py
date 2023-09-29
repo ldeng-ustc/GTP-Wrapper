@@ -127,6 +127,115 @@ class GTPEngine:
         """
         self.engine.stdin.write(b'\n')
         self.engine.stdin.flush()
+    
+    def protocol_version(self) -> int:
+        """protocol_version command
+
+        Returns:
+            int: Version of the GTP Protocol
+        """
+        res = self.send_command("protocol_version")
+        return int(res[0])
+    
+    def name(self) -> str:
+        """name command
+
+        Returns:
+            str: Name of the engine. E.g. "GNU Go", "GoLois", "Many Faces of Go". 
+            The name does not include any version information, which is provided by the version command.
+        """
+        res = self.send_command("name")
+        return res[0]
+    
+    def version(self) -> str:
+        """version command
+
+        Returns:
+            str: Version of the engine. E.g. "3.1.33", "10.5". 
+            Engines without a sense of version number should return the empty string.
+        """
+        res = self.send_command("version")
+        return res[0]
+    
+    def known_command(self, command: str) -> bool:
+        """known_command command
+
+        Args:
+            command (str): Name of a command
+
+        Returns:
+            bool: True if the command is known by the engine, False otherwise
+        """
+        res = self.send_command("known_command " + command)
+        return res[0] == "true"
+    
+    def list_commands(self) -> list[str]:
+        """list_commands command
+
+        Returns:
+            list[str]: List of all commands known by the engine. 
+            Include all known commands, including required ones and private extensions.
+        """
+        res = self.send_command("list_commands")
+        return res
+    
+    def quit(self) -> None:
+        """quit command, do not send any more commands after this
+        """
+        self.send_command("quit")
+        self.engine.wait()
+        self.__read_stdout_thread.join()
+        self.engine = None
+    
+    def boardsize(self, size: int) -> None:
+        """boardsize command. The board size is changed. The board configuration, 
+        number of captured stones, and move history become arbitrary.
+
+        
+        In GTP version 1 this command also did the work of clear_board. This may or may not 
+        be true for implementations of GTP version 2. Thus the controller must call clear_board 
+        explicitly. Even if the new board size is the same as the old one, the board 
+        configuration becomes arbitrary.
+
+        Args:
+            size (int): New size of the board.
+        
+        Raises:
+            ValueError: Invalid size
+        """
+        res = self.send_command(f"boardsize {size}")
+        if res[0].startswith("?"):
+            raise ValueError(res[0])
+    
+    def clear_board(self) -> None:
+        """clear_board command. The board is cleared, the number of captured stones is 
+        reset to zero for both colors and the move history is reset to empty.
+        """
+        self.send_command("clear_board")
+    
+    def komi(self, komi: float) -> None:
+        """komi command. The komi is set to the specified value.
+
+        The engine must accept the komi even if it should be ridiculous.
+
+        Args:
+            komi (float): New value of komi.
+        
+        Raises:
+            ValueError: Syntax error
+        """
+        res = self.send_command(f"komi {komi}")
+        if res[0].startswith("?"):
+            raise ValueError(res[0])
+    
+    # TODO: define Vertex, Color and Move class
+    # Correctly parse the response, use (bool, list[str]) as command return type
+    # remove first character of the response ('=' or '?'). If it is '=', return True, otherwise return False
+        
+    
+    
+
+
 
 if __name__ == "__main__":
     katago_path = r"C:/Utils/katago-v1.13.0-opencl-windows-x64/katago.exe"
