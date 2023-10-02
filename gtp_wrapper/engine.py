@@ -1,16 +1,17 @@
-import os
 import subprocess
 import logging
 import threading
 import time
 from queue import Queue
-from collections.abc import Sequence, Generator
+from collections.abc import Sequence, Iterable
 
 class GTPEngine:
     class __Command:
         def __init__(self, command: str) -> None:
             self.command: str = command
             self.response: list[str] = []
+            self.ready: bool = False        # True if the command is ready to be read
+            self.error: bool = False 
             self.finished: bool = False
             self.lock = threading.Lock()
 
@@ -36,14 +37,23 @@ class GTPEngine:
         def __read_stdout():
             while self.engine.poll() is None:
                 active_command: self.__Command = self.command_queue.get()
-
                 while True:
                     line = self.engine.stdout.readline().decode().strip()
-                    with self.lock, active_command.lock:                       
-                        active_command.response.append(line)
-                        if line == '':
+                    with self.lock, active_command.lock:
+                        if not active_command.ready:
+                            if line[0] != "=" and line[0] != "?":
+                                raise RuntimeError(f"Expected response start with '=' or '?', got '{line[0]}'")
+                            active_command.error = line.startswith("?")
+                            line = line[1:]
+                            active_command.ready = True
+                        
+                        line = line.strip()
+                        if line == "":
                             active_command.finished = True
                             break
+
+                        active_command.response.append(line)
+
                         
         self.__read_stdout_thread = threading.Thread(target=__read_stdout, daemon=True)
         self.__read_stdout_thread.start()
@@ -76,23 +86,22 @@ class GTPEngine:
             return command
 
 
-    def wait_util_finished(self, command: __Command):
-        """Wait until the command is finished.
-        For command with persistent output, must manually stop command before waiting, otherwise it will block forever.
+    def __wait_ready(self, command: __Command):
+        """Wait until the command is ready to be read. (First line of response is ready.)
 
         Args:
             command (__Command): The command to wait for
         """
         while True:
             with self.lock:
-                if command.finished:
+                if command.ready:
                     break
             time.sleep(0.01)
 
-    def send_command(self, command: str) -> list[str]:
+    def send_command(self, command: str) -> tuple[bool, Iterable[str]]:
         """Send a command to the engine and return the response.
-        CANNOT used for command with persistent output (e.g. lz-analyze or kata-analyze).
-        For command with persistent output, use send_command_persistent instead.
+        For command will run forever (such as lz-analyze), must manually call stop_persistent()
+        or send a new command to stop it, otherwise it will iterate forever.
 
         Args:
             command (str): Command to send
@@ -101,11 +110,8 @@ class GTPEngine:
             str: Response from the engine
         """
         cmd = self.__send(command)
-        self.wait_util_finished(cmd)
-        return cmd.response.copy()
-
-    def send_command_persistent(self, command: str) -> Generator[str, None, None]:
-        cmd = self.__send(command)
+        self.__wait_ready(cmd)
+        ok = not cmd.error
 
         def __generate_response():
             i = 0
@@ -120,7 +126,21 @@ class GTPEngine:
                         break
                 if need_wait:
                     time.sleep(0.01)
-        return __generate_response()
+        
+        return ok, __generate_response()
+
+    def __wait_finished(self, command: __Command):
+        """Wait until the command is finished.
+        For command with persistent output, must manually stop command before waiting, otherwise it will block forever.
+
+        Args:
+            command (__Command): The command to wait for
+        """
+        while True:
+            with self.lock:
+                if command.finished:
+                    break
+            time.sleep(0.01)
 
     def stop_persistent(self):
         """Stop a command with persistent output. Actually send an empty line to the engine.
@@ -134,8 +154,8 @@ class GTPEngine:
         Returns:
             int: Version of the GTP Protocol
         """
-        res = self.send_command("protocol_version")
-        return int(res[0])
+        _, res = self.send_command("protocol_version")
+        return int(next(res))
     
     def name(self) -> str:
         """name command
@@ -144,8 +164,8 @@ class GTPEngine:
             str: Name of the engine. E.g. "GNU Go", "GoLois", "Many Faces of Go". 
             The name does not include any version information, which is provided by the version command.
         """
-        res = self.send_command("name")
-        return res[0]
+        _, res = self.send_command("name")
+        return next(res)
     
     def version(self) -> str:
         """version command
@@ -154,8 +174,8 @@ class GTPEngine:
             str: Version of the engine. E.g. "3.1.33", "10.5". 
             Engines without a sense of version number should return the empty string.
         """
-        res = self.send_command("version")
-        return res[0]
+        _, res = self.send_command("version")
+        return next(res)
     
     def known_command(self, command: str) -> bool:
         """known_command command
@@ -166,8 +186,8 @@ class GTPEngine:
         Returns:
             bool: True if the command is known by the engine, False otherwise
         """
-        res = self.send_command("known_command " + command)
-        return res[0] == "true"
+        _, res = self.send_command("known_command " + command)
+        return next(res) == "true"
     
     def list_commands(self) -> list[str]:
         """list_commands command
@@ -176,8 +196,8 @@ class GTPEngine:
             list[str]: List of all commands known by the engine. 
             Include all known commands, including required ones and private extensions.
         """
-        res = self.send_command("list_commands")
-        return res
+        _, res = self.send_command("list_commands")
+        return list(res)
     
     def quit(self) -> None:
         """quit command, do not send any more commands after this
@@ -203,9 +223,10 @@ class GTPEngine:
         Raises:
             ValueError: Invalid size
         """
-        res = self.send_command(f"boardsize {size}")
-        if res[0].startswith("?"):
-            raise ValueError(res[0])
+        ok, res = self.send_command(f"boardsize {size}")
+        if not ok:
+            raise ValueError(next(res))
+
     
     def clear_board(self) -> None:
         """clear_board command. The board is cleared, the number of captured stones is 
@@ -213,7 +234,7 @@ class GTPEngine:
         """
         self.send_command("clear_board")
     
-    def komi(self, komi: float) -> None:
+    def komi(self, new_komi: float) -> None:
         """komi command. The komi is set to the specified value.
 
         The engine must accept the komi even if it should be ridiculous.
@@ -224,34 +245,17 @@ class GTPEngine:
         Raises:
             ValueError: Syntax error
         """
-        res = self.send_command(f"komi {komi}")
-        if res[0].startswith("?"):
-            raise ValueError(res[0])
+        ok, res = self.send_command(f"komi {new_komi}")
+        if not ok:
+            raise ValueError(next(res))
+    
+    
+
     
     # TODO: define Vertex, Color and Move class
     # Correctly parse the response, use (bool, list[str]) as command return type
     # remove first character of the response ('=' or '?'). If it is '=', return True, otherwise return False
         
     
-    
-
-
-
-if __name__ == "__main__":
-    katago_path = r"C:/Utils/katago-v1.13.0-opencl-windows-x64/katago.exe"
-    model_path = r"C:/Utils/katago-models/kata1-b18c384nbt-s5832081920-d3223508649.bin.gz"
-    config_path = r"C:/Utils/katago-v1.13.0-opencl-windows-x64/gtp_custom.cfg"
-    engine = GTPEngine([katago_path, "gtp", "-model", model_path, "-config", config_path])
-    res = engine.send_command("protocol_version")
-    print(res)
-
-    lines = engine.send_command_persistent("lz-analyze 100")
-    cnt = 0
-    for line in lines:
-        print(line)
-        cnt += 1
-        if cnt == 5:
-            engine.stop_persistent()
-    print("Done")
 
     
