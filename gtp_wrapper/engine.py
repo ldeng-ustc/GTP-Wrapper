@@ -2,8 +2,14 @@ import subprocess
 import logging
 import threading
 import time
+from typing import Any
 from queue import Queue
 from collections.abc import Sequence, Iterable
+
+if __name__ == "__main__":
+    from board import Vertex, Color, Move, color_from_str
+else:
+    from .board import Vertex, Color, Move, color_from_str
 
 class GTPEngine:
     class __Command:
@@ -37,9 +43,13 @@ class GTPEngine:
         def __read_stdout():
             while self.engine.poll() is None:
                 active_command: self.__Command = self.command_queue.get()
+                # print(f'get command: "{active_command.command}"')
                 while True:
                     line = self.engine.stdout.readline().decode().strip()
+                    # print(f'read line: "{line}"')
                     with self.lock, active_command.lock:
+                        line = line.strip()
+                        empty_line = line == ""
                         if not active_command.ready:
                             if line[0] != "=" and line[0] != "?":
                                 raise RuntimeError(f"Expected response start with '=' or '?', got '{line[0]}'")
@@ -47,12 +57,12 @@ class GTPEngine:
                             line = line[1:]
                             active_command.ready = True
                         
-                        line = line.strip()
-                        if line == "":
+                        if empty_line:
                             active_command.finished = True
                             break
 
-                        active_command.response.append(line)
+                        active_command.response.append(line.strip())
+                # print(f'finish command: "{active_command.command}"')
 
                         
         self.__read_stdout_thread = threading.Thread(target=__read_stdout, daemon=True)
@@ -249,6 +259,56 @@ class GTPEngine:
         if not ok:
             raise ValueError(next(res))
     
+    def play(self, move_or_color, x=None, y=None, one_based=False) -> None:
+        """play command. A stone of the requested color is played at the requested vertex. 
+        The number of captured stones is updated if needed and the move is added to the move history.
+        """
+        if isinstance(move_or_color, Move):
+            move = move_or_color
+        else:
+            move = Move(move_or_color, x, y, one_based)
+        ok, res = self.send_command(f"play {move}")
+        if not ok:
+            raise ValueError(next(res))
+    
+    def genmove(self, color: Color | str) -> Vertex | str:
+        """genmove command. A stone of the requested color is played where the engine chooses. 
+        The number of captured stones is updated if needed and the move is added to the move history.
+
+        Args:
+            color (Color | str): Color of the stone to play
+
+        Returns:
+            Vertex | str: The vertex where the engine played, or "resign" if the engine resigns.
+            	Notice that Vertex(x=None, y=None) is a valid vertex (means "pass") and will be returned 
+                if the engine wants to pass. "resign" will be return if engine want to give up the game. 
+                The controller is allowed to use this command for either color, regardless who played the last move.
+        """
+        if isinstance(color, str):
+            color = color_from_str(color)
+        ok, res = self.send_command(f"genmove {color}")
+        if not ok:
+            raise ValueError(next(res))
+        str_res = next(res)
+        if str_res == "resign":
+            return "resign"
+        else:
+            return Vertex(str_res)
+    
+    def undo(self) -> None:
+        """undo command. The board configuration and the number of captured stones are 
+        reset to the state before the last move. The last move is removed from the move history.
+
+        If you want to take back multiple moves, use this command multiple times.
+        The engine may fail to undo if the move history is empty or if the engine 
+        only maintains a partial move history, which has been exhausted by previous undos. 
+        It is never possible to undo handicap placements. Use clear_board if you want to 
+        start over. An engine which never is able to undo should not include this command 
+        among its known commands.
+        """
+        ok, res = self.send_command("undo")
+        if not ok:
+            raise ValueError(next(res))
 
 
     

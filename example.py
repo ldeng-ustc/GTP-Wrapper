@@ -27,5 +27,14 @@ if __name__ == "__main__":
     print(f'> list_commands\n{res}')
     assert all([cmd in res for cmd in ["name", "version", "kata-analyze", "play", "genmove"]])
 
+    engine.play("B", "D4")
+    print(f'> play B D4')
+    engine.undo()
+    print(f'> undo')
+
+    res = engine.genmove("B")
+    print(f'> genmove B\n{res}')
+    assert 0 <= res.x <= 18 and 0 <= res.y <= 18
+
 
 

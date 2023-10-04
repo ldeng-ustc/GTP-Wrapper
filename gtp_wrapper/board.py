@@ -218,6 +218,29 @@ class Color(Enum):
     def __repr__(self) -> str:
         return f'Color.{self.name}'
 
+def color_from_str(s: str) -> Color:
+    """Convert a string to Color enum.
+    
+    Args:
+        s (str): 'B' or 'W', 'BLACK' or 'WHITE' for black or white.
+        Case insensitive.
+    
+    Returns:
+        Color: Color enum.
+    
+    >>> color("B")
+    Color.BLACK
+    >>> color("W")
+    Color.WHITE
+    """
+    c = s.upper()
+    if c == "B" or c == "BLACK":
+        return Color.BLACK
+    elif c == "W" or c == "WHITE":
+        return Color.WHITE
+    else:
+        raise ValueError(f"Invalid color: '{s}'")
+
 class Move:
     def __init__(self, color: Color | str, x: int | VertexLike, y: int | None=None, one_based=False) -> None:
         """Create a Move object, a move is a color and a vertex.
@@ -237,13 +260,7 @@ class Move:
         Move(color=Color.BLACK, vertex=Vertex(x=0, y=0))
         """
         if isinstance(color, str):
-            c = color.upper()
-            if c == "B" or c == "BLACK":
-                self.color = Color.BLACK
-            elif c == "W" or c == "WHITE":
-                self.color = Color.WHITE
-            else:
-                raise ValueError(f"Invalid color: '{color}'")
+            self.color = color_from_str(color)
         elif isinstance(color, Color):
             self.color = color
         else:
