@@ -249,7 +249,7 @@ class GTPEngine:
         if not ok:
             raise ValueError(next(res))
     
-    
+
 
     
     # TODO: define Vertex, Color and Move class
