@@ -2,14 +2,9 @@ import subprocess
 import logging
 import threading
 import time
-from typing import Any
 from queue import Queue
 from collections.abc import Sequence, Iterable
-
-if __name__ == "__main__":
-    from board import Vertex, Color, Move, color_from_str
-else:
-    from .board import Vertex, Color, Move, color_from_str
+from .board import Vertex, Color, Move, color_from_str
 
 class GTPEngine:
     class __Command:
@@ -21,7 +16,7 @@ class GTPEngine:
             self.finished: bool = False
             self.lock = threading.Lock()
 
-    def __init__(self, args: Sequence[str] | str, logger_name: str | None  = None):
+    def __init__(self, args: Sequence[str] | str, logger_name: str | None=None):
         """Create a new GTP engine.
 
         Args:
@@ -316,6 +311,4 @@ class GTPEngine:
     # Correctly parse the response, use (bool, list[str]) as command return type
     # remove first character of the response ('=' or '?'). If it is '=', return True, otherwise return False
         
-    
-
     

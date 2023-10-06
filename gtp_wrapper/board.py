@@ -228,9 +228,9 @@ def color_from_str(s: str) -> Color:
     Returns:
         Color: Color enum.
     
-    >>> color("B")
+    >>> color_from_str("B")
     Color.BLACK
-    >>> color("W")
+    >>> color_from_str("W")
     Color.WHITE
     """
     c = s.upper()
@@ -274,6 +274,3 @@ class Move:
     def __repr__(self) -> str:
         return "Move(color={}, vertex={})".format(repr(self.color), repr(self.vertex))
 
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()

@@ -1,11 +1,11 @@
-from gtp_wrapper import GTPEngine
+from gtp_wrapper import KataGoEngine, Vertex, Color, Move
 
 
 if __name__ == "__main__":
     katago_path = r"C:/Utils/katago-v1.13.0-opencl-windows-x64/katago.exe"
     model_path = r"C:/Utils/katago-models/kata1-b18c384nbt-s5832081920-d3223508649.bin.gz"
     config_path = r"C:/Utils/katago-v1.13.0-opencl-windows-x64/gtp_custom.cfg"
-    engine = GTPEngine([katago_path, "gtp", "-model", model_path, "-config", config_path])
+    engine = KataGoEngine(katago_path, model_path, config_path)
 
     res = engine.protocol_version()
     print(f'> protocol_version\n{res}')
